@@ -8,3 +8,5 @@ Description: <Short summary of what the this does>
 Notes:
     <write me>
 """
+
+def configurator_init()
