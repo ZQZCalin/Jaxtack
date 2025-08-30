@@ -11,8 +11,8 @@ Optimizer = optax.GradientTransform
 Schedule = optax.ScalarOrSchedule
 Config = Any
 
-ModelCls = Callable[..., Model]
-DatasetCls = Callable[..., Dataset]
-OptimizerCls = Callable[..., Optimizer]
-ScheduleCls = Callable[..., Schedule]
-ConfigCls = Callable[..., Config]
+ModelClass = Callable[..., Model]
+DatasetClass = Callable[..., Dataset]
+OptimizerClass = Callable[..., Optimizer]
+ScheduleClass = Callable[..., Schedule]
+ConfigClass = Callable[..., Config]

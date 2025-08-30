@@ -5,12 +5,12 @@ from common import _type
 
 class ScheduleRegistry:
     def __init__(self) -> None:
-        self._map: Dict[str, Tuple[_type.ScheduleCls, _type.ConfigCls]] = {}
+        self._map: Dict[str, Tuple[_type.ScheduleClass, _type.ConfigClass]] = {}
 
-    def register(self, name: str, schedule_cls: _type.ScheduleCls, config_cls: _type.ConfigCls) -> None:
+    def register(self, name: str, schedule_class: _type.ScheduleClass, config_class: _type.ConfigClass) -> None:
         if name in self._map:
             raise KeyError(f"Schedule '{name}' already registered.")
-        self._map[name] = (schedule_cls, config_cls)
+        self._map[name] = (schedule_class, config_class)
 
     def build(self, name: str, config: _type.Config) -> _type.Schedule:
         pass
@@ -20,8 +20,8 @@ schedule_registry = ScheduleRegistry()
 
 def register_schedule(
         name: str,
-        schedule_cls: _type.Schedule,
-        config_cls: _type.Config,
+        schedule_class: _type.Schedule,
+        config_class: _type.Config,
 ) -> None:
     """Register a schedule class.
     

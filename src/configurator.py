@@ -9,4 +9,5 @@ Notes:
     <write me>
 """
 
-def configurator_init()
+def configurator_init():
+    pass
