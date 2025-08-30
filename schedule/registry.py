@@ -8,5 +8,4 @@ from schedule.config import (
 from schedule.base import trapezoid_schedule
 
 
-def schedule_registry() -> _type.LearningRate:
-    
+register_schedule(name="trapezoid", schedule=trapezoid_schedule, config=TrapezoidScheduleConfig)

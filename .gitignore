@@ -16,3 +16,7 @@ minGPT/
 
 # VS Code settings
 .vscode/
+
+
+# Local testing
+test.*

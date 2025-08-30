@@ -7,6 +7,7 @@ wandb
 hydra-core
 einops
 tqdm
+dataclasses
 
 # Below we use the stable versions for consistency.
 torch==2.2.2
