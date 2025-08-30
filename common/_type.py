@@ -5,9 +5,9 @@ import optax
 from typing import Any, Callable
 
 
-Model = jax.Module
+Model = Callable[..., Any]
 Dataset = Any
-Optimizer = optax.GradientTransform
+Optimizer = optax.GradientTransformation
 Schedule = optax.ScalarOrSchedule
 Config = Any
 
