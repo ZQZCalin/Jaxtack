@@ -1,0 +1,35 @@
+name: pile
+
+# number of examples placed on each GPU. 
+# will be overwritten to 2 if use_loadit is true.
+batch_size: 4 
+
+# total number of samples in one iteration.
+# by default, it's set to batch_size
+# otherwise, must be a multiple of batch_size 
+total_batch_size: null
+
+# shuffle buffer for data loader. 0 means no shuffle.
+# shuffle_buffer_size: 10000
+shuffle_buffer_size: 200000   # NOTE: starting from 2024/09/13, the default value is change from 10k -> 200k
+
+# following settings chosen after
+# some experimentation with a tiny model.
+# may not be optimal for all machines, but
+# hopefully with a reasonably sized model this will
+# prevent dataloading from being the bottleneck.
+dataloader_workers: 2
+
+# if true, will use the loadit dataset in {loadit_path}
+use_loadit: true
+loadit_path: "/projectnb/aclab/tranhp/trainDataloader_pile/"
+# this specifies we are using the first 10 mil data.
+loadit_length: 10000000
+
+# if true, will manually shift labels to the left by one 
+# and pad the last label by -100 during the training step.
+# this is needed when using loadit dataset
+shift_labels: false
+
+# random seed for loadit.chunck_shuffle
+seed: 42

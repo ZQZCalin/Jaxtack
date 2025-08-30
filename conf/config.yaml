@@ -1,0 +1,93 @@
+defaults:
+  - model: language_models/min_gpt
+  - dataset: language_models/pile
+  - optimizer: optax/adamw
+
+train:
+  max_steps: 50000
+  random_seed: 42   # this controls the entire randomness during training
+
+  # clip the gradient to have l2 norm at most this value
+  gradient_clip_val: 10.0
+
+  # whether to wrap the optimizer with online to nonconvex conversion
+  # for some most optimizers/online learners, they have default value of wrap_o2nc 
+  # (e.g., some online learners are always wrapped, and some optimizers are never wrapped),
+  # which overwrites this setting.
+  # TODO: will deprecate this config. init_optimizer will take care of wrapping o2nc.
+  wrap_o2nc: False
+
+  # random scaling options. supports "exponential".
+  random_scaling: null
+  random_scaling_seed: 0  # to be deprecated. we should only use one global random seed and generate sub-keys by jr.split()
+  use_importance_sampling: true
+
+  # whether to use automatic mixed precision
+  use_amp: True
+  # value to cast to in mixed precision training.
+  precision: float16
+
+logging:
+  wandb_project: null
+  wandb_name: null
+  wandb_runid: null
+
+  # this will slow down computation a bit (I believe due to extra GPU/CPU communication),
+  # but will log more stuff (like learning rates).
+  # Still working on nice way to do this logging - we really should only incur one communication
+  # round per iteration and I don't think the logging data should significantly impact it.
+  log_callback_data: True
+
+  # controls number of logs per sec.
+  # set to inf for unlimited wandb logs.
+  wandb_logs_per_sec: 10.0
+  
+  running_stats_window: 1000
+
+  log_fn: full_log
+  # ===============================================================================================
+  # NOTE: starting from here only matters if you use the default `full_log` LogFn.
+  # tracking additional metrics could incur additional computation and memory cost, and
+  # configs below allow you to save some costs by disabling certain metrics.
+  
+  # *In terms of memory cost:
+  # stores the last gradient g(n-1)
+  store_last_grads: True
+  # stores the sum of past gradients g(1:n-1)
+  store_past_grads: True
+  # stores the change in parameter x(n) - x(n-1)
+  store_last_params: True
+  # *In terms of computation cost:
+  # computes f(x(n-1), zn), which costs an additional forward pass
+  compute_last_loss: True
+  # computes g(x(n-1), zn), which costs an additional forward and backward pass
+  compute_last_grads: False
+
+checkpoint:
+  save: False
+  load: False
+
+  # SAVING CHECKKPOINT
+  # If save is true, save checkpoint to "{save_path}/iter_{it}.ckpt".
+  # If save_steps has type == int, save checkpoint when it % save_steps = 0. E.g. save_steps=100
+  # If save_steps has type == list[int], save checkpoint when it in save_steps. E.g. save_steps=[10,100,1000]
+  save_path: null
+  save_steps: null
+  # If not None, determines the total steps in one checkpoint training. Otherwise, total steps=train.max_steps
+  num_steps: null
+
+  # LOADING CHECKPOINT
+  # If load is true, load checkpoint from "{load_path}/{load_file}".
+  load_path: null
+  load_file: null
+  # Defaults to false and loads existing config from "{load_path}/config.yaml".
+  # If true, will use the user-specific config instead of the loaded config.
+  # USE WITH CAUTION and make sure most configs remain the same as the saved configs.
+  overwrite_config: False
+  # Defaults to false and loads `opt_state` from the saved train_state.
+  # If true, will reinitialize the optimizer and `opt_state`.
+  # This should only be used either if you want to restart your optimizer 
+  # or if you need to use a different optimizer (e.g. from Adam to SGDM).
+  # Keep it to false if you only need to change optimizer hyper-parameters such as learning rate or momentum.
+  # USE WITH CAUTION.
+  overwrite_optimizer: False

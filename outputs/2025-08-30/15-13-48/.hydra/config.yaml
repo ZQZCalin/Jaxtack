@@ -1,0 +1,71 @@
+model:
+  name: min_gpt
+  dim: 768
+  num_heads: 12
+  num_blocks: 12
+  context_length: 1024
+  rescale_residuals: false
+  attn_dropout: 0
+  attn_linear_dropout: 0
+  transformer_dropout: 0
+  gpt_dropout: 0
+  head_bias: false
+  pad_token: true
+  load_pytorch: false
+dataset:
+  name: pile
+  batch_size: 4
+  total_batch_size: null
+  shuffle_buffer_size: 200000
+  dataloader_workers: 2
+  use_loadit: true
+  loadit_path: /projectnb/aclab/tranhp/trainDataloader_pile/
+  loadit_length: 10000000
+  shift_labels: false
+  seed: 42
+optimizer:
+  name: optax_adamw
+  learning_rate:
+    name: trapezoid
+    peak_value: 0.0001
+    total_steps: 1000
+    warmup_steps: 100
+    decay_steps: 100
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-08
+  weight_decay: 0.1
+  use_nesterov: false
+train:
+  max_steps: 50000
+  random_seed: 42
+  gradient_clip_val: 10.0
+  wrap_o2nc: false
+  random_scaling: null
+  random_scaling_seed: 0
+  use_importance_sampling: true
+  use_amp: true
+  precision: float16
+logging:
+  wandb_project: null
+  wandb_name: null
+  wandb_runid: null
+  log_callback_data: true
+  wandb_logs_per_sec: 10.0
+  running_stats_window: 1000
+  log_fn: full_log
+  store_last_grads: true
+  store_past_grads: true
+  store_last_params: true
+  compute_last_loss: true
+  compute_last_grads: false
+checkpoint:
+  save: false
+  load: false
+  save_path: null
+  save_steps: null
+  num_steps: null
+  load_path: null
+  load_file: null
+  overwrite_config: false
+  overwrite_optimizer: false
