@@ -40,20 +40,19 @@ async def _demo():
     jid = await mgr.submit(spec)
 
     # # Example 2: run a Python callable
-    # async def my_task(job_id: str, x: int) -> str:
-    #     await asyncio.sleep(0.5)
-    #     return f"job {job_id} says {x*x}"
+    async def my_task(job_id: str, x: int) -> str:
+        await asyncio.sleep(0.5)
+        return f"job {job_id} says {x*x}"
 
-    # py_backend = PythonCallableBackend()
-    # py_mgr = JobManager(py_backend)
-    # py_mgr.register("on_finish", printer)
+    py_backend = PythonCallableBackend()
+    py_mgr = JobManager(py_backend)
+    py_mgr.register("on_finish", printer)
 
-    # jid2 = await py_mgr.submit(JobSpec(callable=my_task, args=(7,), timeout_seconds=3, name="square"))
+    jid2 = await py_mgr.submit(JobSpec(callable=my_task, args=(7,), timeout_seconds=3, name="square"))
 
     # Wait for both jobs to complete
-    #   for j in [mgr.status(jid), py_mgr.status(jid2)]):
     while any(j.state not in (JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED)
-            for j in [mgr.status(jid)]):
+          for j in [mgr.status(jid), py_mgr.status(jid2)]):
         await asyncio.sleep(0.2)
 
 if __name__ == "__main__":
