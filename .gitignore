@@ -20,3 +20,10 @@ minGPT/
 
 # Local testing
 # test.*
+
+#outputs
+outputs/
+
+#job
+job_logs/
+jobs_state.json

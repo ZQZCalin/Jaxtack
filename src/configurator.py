@@ -9,5 +9,14 @@ Notes:
     <write me>
 """
 
-def configurator_init():
+import inspect
+import importlib
+from dataclasses import dataclass, is_dataclass
+import hydra
+from omegaconf import OmegaConf, DictConfig
+from optimizer import config as optimizer_config
+
+
+def configurator_init(config: DictConfig, verbose) -> dataclass:
     pass
+

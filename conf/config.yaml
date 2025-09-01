@@ -2,6 +2,7 @@ defaults:
   - model: language_models/min_gpt
   - dataset: language_models/pile
   - optimizer: optax/adamw
+  - _self_
 
 train:
   max_steps: 50000
