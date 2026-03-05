@@ -9,17 +9,9 @@ __pycache__/
 # Environment directories
 .env
 .venv/
-venv/
-env/
-
-minGPT/
 
 # VS Code settings
 .vscode/
-
-
-# Local testing
-# test.*
 
 #outputs
 outputs/
