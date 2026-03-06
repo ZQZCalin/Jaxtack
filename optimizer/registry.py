@@ -56,11 +56,13 @@ class OptimizerRegistry:
             entry = self._entries[config.name]
         except KeyError:
             raise KeyError(f"unknown optimizer '{config.name}'")
+
         if entry.builder is None:
             raise RuntimeError(
-                f"optimizer '{config.name}' has no init_fn registered "
-                "(did you forget to decorate or pass init_fn=... ?)"
+                f"optimizer '{config.name}' has no builder registered "
+                "(did you forget to decorate or pass builder=... ?)"
             )
+
         return entry.builder(config, **kwargs)
 
     def get_config_class(self, name: str) -> Type[BaseOptimizerConfig]:

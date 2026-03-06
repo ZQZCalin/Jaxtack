@@ -1,29 +1,32 @@
-from omegaconf import OmegaConf, DictConfig
+# Optimizer builder.
 
 import optax
-from .registry import OPTIMIZER_REGISTRY
+from omegaconf import OmegaConf, DictConfig
+from optimizer.registry import OPTIMIZER_REGISTRY
+from optimizer.schedule.registry import build_learning_rate
 
-def build_optimizer(optimizer_config: DictConfig) -> optax.GradientTransformation:
+
+def build_optimizer(cfg: DictConfig) -> optax.GradientTransformation:
     """Build an optimizer from .yaml config."""
-    name: str = optimizer_config.name
+    name: str = cfg.name
     
     ConfigClass = OPTIMIZER_REGISTRY.get_config_class(name)
-    config = ConfigClass(**OmegaConf.to_container(optimizer_config, resolve=True))
+    optimizer_config = ConfigClass(**OmegaConf.to_container(cfg, resolve=True))
 
     # NOTE: user may customize building process for special optimizers.
     # if name == "my_optim":
     #     mask = ...
     #     optimizer = OPTIMIZER_REGISTRY.build(
-    #         config, 
+    #         optimizer_config, 
     #         mask=mask
     #     )
     #     return optimizer
 
     # By default, we unpack the learning rate schedule.
-    learning_rate_config = optimizer_config.get("learning_rate", None)
-    learning_rate = XXX # TODO
+    learning_rate_config = cfg.get("learning_rate", None)
+    learning_rate = build_learning_rate(learning_rate_config)
     optimizer = OPTIMIZER_REGISTRY.build(
-        config, 
+        optimizer_config, 
         learning_rate=learning_rate
     )
     return optimizer
