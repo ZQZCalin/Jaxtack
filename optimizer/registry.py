@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Type
+from optax import GradientTransformation
 from .config import BaseOptimizerConfig
 
 
 @dataclass
 class OptimizerEntry:
     config_cls: Type[BaseOptimizerConfig]
-    init_fn: Callable[..., Any] | None = None
+    builder: Callable[..., Any] | None = None
 
 
 class OptimizerRegistry:
@@ -21,54 +22,52 @@ class OptimizerRegistry:
         self,
         name: str,
         config_cls: Type[BaseOptimizerConfig],
-        init_fn: Callable[..., Any] | None = None,
+        builder: Callable[..., Any] | None = None,
     ):
         """
-        Case 1: default init_fn is the decorated function
+        Case 1: default builder is the decorated function
             @OPTIMIZER_REGISTRY.register("adam", AdamConfig)
-            def init_adam(config: AdamConfig, *args): 
+            def build_adam(config: AdamConfig, *args): 
                 ...
 
-        Case 2: use a custom function as init_fn
-            def init_custom(config: CustomConfig, *args):
+        Case 2: use a custom function as builder
+            def build_custom(config: CustomConfig, *args):
                 ...
-            OPTIMIZER_REGISTRY.register("custom", CustomConfig, init_fn=init_custom)
+            OPTIMIZER_REGISTRY.register("custom", CustomConfig, builder=build_custom)
         """
         if name in self._entries:
             raise ValueError(f"optimizer '{name}' already registered")
 
-        entry = OptimizerEntry(config_cls=config_cls, init_fn=init_fn)
+        entry = OptimizerEntry(config_cls=config_cls, builder=builder)
         self._entries[name] = entry
 
-        # Case 1: default init_fn to the decorated function
-        if init_fn is None:
+        # Case 1: default builder to the decorated function
+        if builder is None:
             def decorator(obj: Callable[..., Any]) -> Callable[..., Any]:
-                entry.init_fn = obj
+                entry.builder = obj
                 return obj
             return decorator
-        # Case 2: custom init_fn
+        # Case 2: custom builder
         else:
-            return init_fn
+            return builder
 
-    def get_config_cls(self, name: str) -> Type[BaseOptimizerConfig]:
-        try:
-            return self._entries[name].config_cls
-        except KeyError:
-            raise KeyError(f"unknown optimizer '{name}'")
-
-    def init(self, config: BaseOptimizerConfig, **kwargs: Any) -> Any:
+    def build(self, config: BaseOptimizerConfig, **kwargs: Any) -> GradientTransformation:
         try:
             entry = self._entries[config.name]
         except KeyError:
             raise KeyError(f"unknown optimizer '{config.name}'")
-
-        if entry.init_fn is None:
+        if entry.builder is None:
             raise RuntimeError(
                 f"optimizer '{config.name}' has no init_fn registered "
                 "(did you forget to decorate or pass init_fn=... ?)"
             )
+        return entry.builder(config, **kwargs)
 
-        return entry.init_fn(config, **kwargs)
+    def get_config_class(self, name: str) -> Type[BaseOptimizerConfig]:
+        try:
+            return self._entries[name].config_cls
+        except KeyError:
+            raise KeyError(f"unknown optimizer '{name}'")
 
     def list_available(self) -> list[str]:
         return sorted(self._entries.keys())
