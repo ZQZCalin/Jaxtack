@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from typing import Any
-from jax.typing import ArrayLike
 from optimizer.schedule.registry import (
     LEARNING_RATE_REGISTRY,
     BaseLearningRateConfig,
@@ -21,7 +20,7 @@ class ConstantScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.constant_schedule
     """
     name: str = "constant_schedule"
-    value: ArrayLike = 1e-3
+    value: float = 1e-3
 
 
 @LEARNING_RATE_REGISTRY.register("constant_schedule", ConstantScheduleConfig)
@@ -37,8 +36,8 @@ class WarmupConstantScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.warmup_constant_schedule
     """
     name: str = "warmup_constant_schedule"
-    init_value: ArrayLike = 0.0
-    peak_value: ArrayLike = 1e-3
+    init_value: float = 0.0
+    peak_value: float = 1e-3
     warmup_steps: int = 1000
 
 
@@ -61,10 +60,10 @@ class CosineDecayScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.cosine_decay_schedule
     """
     name: str = "cosine_decay_schedule"
-    init_value: ArrayLike = 1e-3
+    init_value: float = 1e-3
     decay_steps: int = 10000
-    alpha: ArrayLike = 0.0
-    exponent: ArrayLike = 1.0
+    alpha: float = 0.0
+    exponent: float = 1.0
 
 
 @LEARNING_RATE_REGISTRY.register("cosine_decay_schedule", CosineDecayScheduleConfig)
@@ -88,7 +87,7 @@ class CosineOnecycleScheduleConfig(BaseLearningRateConfig):
     """
     name: str = "cosine_onecycle_schedule"
     transition_steps: int = 10000
-    peak_value: ArrayLike = 1e-3
+    peak_value: float = 1e-3
     pct_start: float = 0.3
     div_factor: float = 25.0
     final_div_factor: float = 10000.0
@@ -115,12 +114,12 @@ class WarmupCosineDecayScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.warmup_cosine_decay_schedule
     """
     name: str = "warmup_cosine_decay_schedule"
-    init_value: ArrayLike = 0.0
-    peak_value: ArrayLike = 1e-3
+    init_value: float = 0.0
+    peak_value: float = 1e-3
     warmup_steps: int = 1000
     decay_steps: int = 10000
-    end_value: ArrayLike = 0.0
-    exponent: ArrayLike = 1.0
+    end_value: float = 0.0
+    exponent: float = 1.0
 
 
 @LEARNING_RATE_REGISTRY.register(
@@ -147,12 +146,12 @@ class ExponentialDecayScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.exponential_decay
     """
     name: str = "exponential_decay"
-    init_value: ArrayLike = 1e-3
+    init_value: float = 1e-3
     transition_steps: int = 1000
     decay_rate: float = 0.9
     transition_begin: int = 0
     staircase: bool = False
-    end_value: ArrayLike | None = None
+    end_value: float | None = None
 
 
 @LEARNING_RATE_REGISTRY.register("exponential_decay", ExponentialDecayScheduleConfig)
@@ -177,14 +176,14 @@ class WarmupExponentialDecayScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.warmup_exponential_decay_schedule
     """
     name: str = "warmup_exponential_decay_schedule"
-    init_value: ArrayLike = 0.0
-    peak_value: ArrayLike = 1e-3
+    init_value: float = 0.0
+    peak_value: float = 1e-3
     warmup_steps: int = 1000
     transition_steps: int = 10000
-    decay_rate: ArrayLike = 0.9
+    decay_rate: float = 0.9
     transition_begin: int = 0
     staircase: bool = False
-    end_value: ArrayLike | None = None
+    end_value: float | None = None
 
 
 @LEARNING_RATE_REGISTRY.register(
@@ -217,7 +216,7 @@ class LinearOnecycleScheduleConfig(BaseLearningRateConfig):
     """
     name: str = "linear_onecycle_schedule"
     transition_steps: int = 10000
-    peak_value: ArrayLike = 1e-3
+    peak_value: float = 1e-3
     pct_start: float = 0.3
     pct_final: float = 0.85
     div_factor: float = 25.0
@@ -248,8 +247,8 @@ class LinearScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.linear_schedule
     """
     name: str = "linear_schedule"
-    init_value: ArrayLike = 1e-3
-    end_value: ArrayLike = 1e-5
+    init_value: float = 1e-3
+    end_value: float = 1e-5
     transition_steps: int = 10000
     transition_begin: int = 0
 
@@ -274,7 +273,7 @@ class PiecewiseConstantScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.piecewise_constant_schedule
     """
     name: str = "piecewise_constant_schedule"
-    init_value: ArrayLike = 1e-3
+    init_value: float = 1e-3
     boundaries_and_scales: dict[int, float] | dict[str, float] | None = None
 
 
@@ -302,7 +301,7 @@ class PiecewiseInterpolateScheduleConfig(BaseLearningRateConfig):
     """
     name: str = "piecewise_interpolate_schedule"
     interpolate_type: str = "linear"  # "linear" or "cosine"
-    init_value: ArrayLike = 1e-3
+    init_value: float = 1e-3
     boundaries_and_scales: dict[int, float] | dict[str, float] | None = None
 
 
@@ -330,9 +329,9 @@ class PolynomialScheduleConfig(BaseLearningRateConfig):
     https://optax.readthedocs.io/en/latest/api/optimizer_schedules.html#optax.schedules.polynomial_schedule
     """
     name: str = "polynomial_schedule"
-    init_value: ArrayLike = 1e-3
-    end_value: ArrayLike = 1e-5
-    power: ArrayLike = 2.0
+    init_value: float = 1e-3
+    end_value: float = 1e-5
+    power: float = 2.0
     transition_steps: int = 10000
     transition_begin: int = 0
 
