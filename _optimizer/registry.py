@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Type
 from optax import GradientTransformation
-from .config import BaseOptimizerConfig
+from _optimizer.config import BaseOptimizerConfig
 
 
 @dataclass

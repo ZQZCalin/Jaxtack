@@ -2,12 +2,15 @@
 
 import optax
 from omegaconf import OmegaConf, DictConfig
-from optimizer.registry import OPTIMIZER_REGISTRY
-from optimizer.schedule.registry import build_learning_rate
+from _optimizer.registry import OPTIMIZER_REGISTRY
+from _optimizer.schedule.registry import build_learning_rate
 
+
+# TODO: encourage customized config unpacking for special optimizers,
+# and include them in the same optimizer file.
 
 def build_optimizer(cfg: DictConfig) -> optax.GradientTransformation:
-    """Build an optimizer from .yaml config."""
+    """Wrapper for building optimizer from yaml config."""
     name: str = cfg.name
     
     ConfigClass = OPTIMIZER_REGISTRY.get_config_class(name)

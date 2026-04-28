@@ -1,3 +1,0 @@
-# Optimizer subfolder
-
-from .builder import build_optimizer

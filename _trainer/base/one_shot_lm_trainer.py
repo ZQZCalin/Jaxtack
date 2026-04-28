@@ -1,0 +1,457 @@
+# trainer/base/minibatch_lm_trainer.py
+"""One-Shot LM trainer."""
+
+from __future__ import annotations
+
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree_util as jtu
+import torch
+import equinox as eqx
+import optax
+
+from typing import Tuple, Callable, Iterable
+from jax import Array
+from jax.typing import ArrayLike
+from omegaconf import OmegaConf, DictConfig
+
+from tqdm import tqdm
+
+from trainer.config import BaseTrainerConfig, BaseTrainerState
+
+
+class OneShotLMTrainerConfig(BaseTrainerConfig):
+    name: str = "one_shot_lm_trainer"
+
+
+class OneShotLMTrainerState(BaseTrainerState):
+    model: eqx.Module
+    opt_state: optax.OptState
+    iteration: ArrayLike
+    prng_key: Array
+
+
+def _get_accuracy(logits: Array, batch: Tuple[Array, Array], ignore_index: int = -100):
+    """Ignores padding token -100."""
+    input, target = batch # [N, L],  [N, L]
+    predictions = jnp.argmax(logits, axis=2) # [N, L, C] -> [N, L]
+    return jnp.sum(predictions == target) / jnp.sum(target != ignore_index)
+
+
+def _batched_forward(
+        *batches: DataBatch,
+        train_state: OneShotLMTrainerState,
+        loss_fn: ObjectiveFn,
+        use_amp: bool,
+        amp_precision: str,
+) -> Tuple[Array, Array, OneShotLMTrainerState]:
+    """The forward propagation: computes mini-batch average of loss and accuracy.
+    
+    Returns:
+        A tuple of (loss, accuracy, train_state).
+    """
+    if use_amp:
+        amp_loss_fn = amp(loss_fn, compute_dtype=get_dtype(amp_precision))
+    else:
+        amp_loss_fn = loss_fn
+
+    model = train_state.model
+    train_key = train_state.train_key
+    num_batches = len(batches)
+
+    current_key, new_key = jr.split(train_key)
+    keys = jr.split(current_key, num_batches)
+
+    # Use jax.lax.fori_loop to aggregate forward_prop
+    batches = jnp.array(batches)
+    keys = jnp.array(keys)
+
+    def forward_prop_single_batch(i, val):
+        loss, accuracy = val
+        batch, key = batches[i], keys[i]
+        loss_, logits_ = amp_loss_fn(model, batch, key=key)
+
+        loss += loss_
+        accuracy += _get_accuracy(logits_, batch)
+        return (loss, accuracy)
+    
+    init_val = (0.0, 0.0)
+    loss, accuracy = jax.lax.fori_loop(
+        0, num_batches, forward_prop_single_batch, init_val
+    )
+    loss /= num_batches
+    accuracy /= num_batches
+
+    # Only need to update train_key.
+    train_state = train_state._replace(
+        train_key=new_key,
+    )
+
+    return loss, accuracy, train_state
+
+
+def _batched_backward(
+        *batches: DataBatch,
+        train_state: OneShotLMTrainerState,
+        loss_fn: ObjectiveFn,
+        use_amp: bool,
+        amp_precision: str,
+) -> Tuple[Array, Array, PyTree, OneShotLMTrainerState]:
+    """The backward propagation: computes mini-batch average of loss, accuracy, and grads.
+
+    Only modifies the amp_state and train_key in the train_state.
+
+    Args:
+        batches: either a single data batch or a list of batches.
+        train_state: the train state container.
+        loss_fn: a mapping from (model, single_batch, key) to (loss, logits).
+        use_amp: if true, turns on auto mixed precision.
+        amp_precision: specifies the precision of amp.
+    
+    Returns:
+        A tuple of (loss, accuracy, grads, train_state).
+    """
+    if use_amp:
+        amp_loss_fn = amp(loss_fn, compute_dtype=get_dtype(amp_precision))
+        value_and_grad_fn = dynamic_scale_value_and_grad(
+            amp_loss_fn, filter=True, has_aux=True, redo_on_nan=0
+        )
+    else:
+        value_and_grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
+
+    model = train_state.model
+    dynamic_scaler_state = train_state.dynamic_scaler_state
+    train_key = train_state.train_key
+    num_batches = len(batches)
+
+    current_key, new_key = jr.split(train_key)
+    keys = jr.split(current_key, num_batches)
+
+    # Wrap with jax.lax.fori_loop.
+    batches = jnp.array(batches)
+    keys = jnp.array(keys)
+
+    def back_prop_single_batch(i, val):
+        loss, accuracy, grads, dynamic_scaler_state = val
+        batch, key = batches[i], keys[i]
+        if use_amp:
+            dynamic_scaler_state, ((loss_, logits_), grads_) = value_and_grad_fn(
+                model, batch, key=key, dynamic_scaler_state=dynamic_scaler_state
+            )
+        else:
+            (loss_, logits_), grads_ = value_and_grad_fn(model, batch, key=key)
+        loss += loss_
+        accuracy += get_accuracy(logits_, batch)
+        grads = tree_utils.add(grads, grads_)
+        return (loss, accuracy, grads, dynamic_scaler_state)
+    
+    loss = 0.0
+    accuracy = 0.0
+    grads = tree_utils.zeros_like(eqx.filter(model, eqx.is_array))
+    init_val = (loss, accuracy, grads, dynamic_scaler_state)
+    loss, accuracy, grads, dynamic_scaler_state = jax.lax.fori_loop(
+        0, num_batches, back_prop_single_batch, init_val
+    )
+    loss /= num_batches
+    accuracy /= num_batches
+    grads = tree_utils.scalar_dot(grads, 1/num_batches)
+
+    # Only update amp_state and train_key.
+    train_state = train_state._replace(
+        dynamic_scaler_state=dynamic_scaler_state,
+        train_key=new_key,
+    )
+
+    return loss, accuracy, grads, train_state
+
+
+
+
+# TODO: maybe a better design is to instantiate the Logger class in each train_loop function
+# so that each train_loop is coupled with one unique logger. This way, we don't need to worry
+# about manually changing codes when a different logger is used.
+# - Cons: only one logger is allowed, which violates my initial design.
+def train_step(
+        train_state: OneShotLMTrainerState,
+        batches: List[DataBatch],
+        optimizer: GradientTransformation,
+        loss_fn: ObjectiveFn,
+        logger: Logger,
+        config: DictConfig,
+) -> Tuple[Array, Array, LogMetrics, OneShotLMTrainerState]:
+    """Wraps one training step, including back-prop, optimizer update, log update, etc.
+
+    Given a train_state corresponding to model x_n and a mini-batch of data z_n
+    in iteration n (starting from n=0), performs one train step and updates to model x_(n+1).
+    
+    Returns:
+        A tuple of (loss, accuracy, log metrics, train state).
+    """
+    use_amp = config.train.use_amp
+    amp_precision = config.train.precision
+    use_log_callback = config.logging.wandb_project != None and config.logging.log_callback_data
+    # TODO: this only enables when using default logger; needs a better incorporation of logger
+    if config.logger.logger_name == "default":
+        use_forward_prev = config.logger.compute_last_loss and use_log_callback
+        use_back_prev = config.logger.compute_last_grads and use_log_callback
+    else:
+        use_forward_prev = False
+        use_back_prev = False
+
+    model = train_state.model                                       # x_n
+    opt_state = train_state.opt_state
+    log_state = train_state.log_state
+    iteration = train_state.iteration
+
+    # Compute f(x_n, z_n) and g(x_n, z_n).
+    loss, accuracy, grads, train_state = _batched_backward(
+        *batches, 
+        train_state=train_state, 
+        loss_fn=loss_fn, 
+        use_amp=use_amp, 
+        amp_precision=amp_precision,
+    )
+
+    # Apply one-step update: x_n -> x_(n+1).
+    # NOTE: following the notion of online-to-non-convex, the updates 
+    # used for x_(n+1) has iteration index n+1, i.e., Delta_(n+1). 
+    # Hence, Delta_(n+1) is dependent on g_t but independent of g_(t+1).
+    updates, opt_state = optimizer.update(
+        grads, opt_state, eqx.filter(model, eqx.is_array)
+    )                                                               # x_(n+1) - x_n = s_(n+1) * Delta_(n+1)
+    new_model = eqx.apply_updates(model, updates)                   # x_(n+1)
+
+    # Compute log metrics via logger.
+    # NOTE: this part of the code needs manual adaption to logger.update().
+    # For now, please be consistent with the logger.
+    # TODO: if we want back_prop at x_(n-1), then we also need to store amp_state
+    # of the last iteration as well?
+    # For full_log, we need to compute an extra forward prop at f(x_(n-1), z_n). 
+    if use_forward_prev:
+        is_nonarray = lambda x: not eqx.is_array(x)
+        train_state = train_state._replace(
+            model = eqx.combine(log_state.params_prev, eqx.filter(model, is_nonarray))
+        )
+        loss_prev, _, _ = _batched_forward(
+            *batches, 
+            train_state=train_state, 
+            loss_fn=loss_fn, 
+            use_amp=use_amp, 
+            amp_precision=amp_precision,
+        )
+    else:
+        loss_prev=loss
+
+    optim_metrics = get_internal_logs(opt_state)
+    random_scaling = optim_metrics.get("update/random_scaling", 1.0)
+    if isinstance(logger, type(None)):
+        raise KeyboardInterrupt
+    log_state, log_metrics = logger.update(
+        log_state, loss=loss, loss_prev=loss_prev, 
+        params=eqx.filter(model, eqx.is_array),
+        grads=grads, updates=updates,
+        random_scaling=random_scaling,
+    )
+    log_metrics.update(optim_metrics)
+
+    # Update new train_state.
+    train_state = train_state._replace(
+        model = new_model,
+        opt_state = opt_state,
+        log_state = log_state,
+        iteration = optax.safe_int32_increment(iteration),
+    )
+    return loss, accuracy, log_metrics, train_state
+
+
+# NOTE: to be strict, we should only update train state if gradient is finite.
+# Right now, the first iteration always have grad=inf (for some unknown reason),
+# so training technically starts from iteration 2.
+
+
+# TODO: remove dependency on yaml config. Everything should be passed as a component/argument, not a config.
+def lm_train_loop(
+        config: DictConfig,
+        train_state: OneShotLMTrainerState,
+        optimizer: optax.GradientTransformation,
+        dataloader: torch.utils.data.DataLoader | Iterable,
+        loss_fn: Callable[[Array, Array], Array],
+        logger: Logger,
+        time_keeper: TimeKeeper,
+        wandb_logger: RateLimitedWandbLog,
+        max_nan_loss: int = 5,
+        max_loss_blow_ups: int = 3,
+) -> OneShotLMTrainerState:
+    """The main train loop that handles training, logging, and checkpointing."""
+    # TODO: move the logic to checkpoint manager
+    num_steps = config.train.max_steps
+    if config.checkpoint.save and config.checkpoint.num_steps:
+        num_steps = config.checkpoint.num_steps
+
+    # TODO: consider adding a batch index in train_state, instead of hardcoding batch index like this
+    num_batches = config.dataset.total_batch_size // config.dataset.batch_size   # number of mini-batches per iter
+    start_steps = train_state.iteration                 # 0 if not loading from checkpoint
+    end_steps = start_steps + num_steps
+    dataloader_idx = range(start_steps*num_batches, end_steps*num_batches, num_batches)
+    pbar = tqdm(enumerate(dataloader_idx), total=num_steps)
+
+    running_loss, running_accuracy, total_tokens = 0, 0, 0
+    
+    train_step_jit = eqx.filter_jit(
+        jtu.Partial(train_step, config=config),
+    )
+    
+    # TODO: migrate to logging manager
+    # Initialize Wandb Logger
+    beta = 1.0 - 1.0 / config.logging.running_stats_window
+    iteration_timing_events = ["iteration", "dataloader", "train_step"]
+    time_keeper.mark(start_events=["dataloader", "iteration", "tokens", "samples"])
+
+    # TODO: migrate to early stop manager
+    num_loss_blow_ups = 0
+
+    for it, batch_idx in pbar:
+        if it >= num_steps:
+            break
+        # Load training batch.
+        batches = []
+        tokens = 0
+        samples = 0
+        for batch in dataloader[batch_idx: batch_idx+num_batches]:
+            # Manually shift labels for loadit dataset.
+            if config.dataset.shift_labels:
+                batch = shift_labels(batch)
+            input_ids = jnp.asarray(batch["input_ids"])
+            labels = jnp.asarray(batch["labels"])
+            batches.append((input_ids, labels))
+            tokens += jnp.sum(jnp.asarray(batch["attention_mask"]))
+            samples += labels.shape[0]
+
+        time_keeper.mark(end_events={"dataloader": 1}, start_events=["train_step"])
+
+        # Apply one-step train_step.
+        loss, accuracy, log_metrics, train_state = train_step_jit(
+            train_state, batches, optimizer, loss_fn, logger
+        )
+
+        time_keeper.mark(
+            end_events={"train_step": 1},
+        )
+
+        # Update loss and accuracy.
+        if running_loss == 0:
+            running_loss = loss
+        else:
+            running_loss = beta * running_loss + (1.0 - beta) * loss
+        total_tokens += tokens
+        running_accuracy = beta * running_accuracy + (1 - beta) * accuracy
+        pbar.set_description(
+            f"train iter: {it}, tokens: {total_tokens}, loss: {loss:.2f}, accuracy: {accuracy:.4f}, running_loss: {running_loss/(1.0-beta**(it+1)):.2f}, running_accuracy: {running_accuracy/(1.0-beta**(it+1)):.4f}"
+        )
+
+        # TODO: modular implementation using a stateless and configurable function, e.g., 
+        #   >>> early_stop_detector = average_outlier_detector(early_stop_config)
+        #   >>> check: bool = early_stop_detector(early_stop_state)
+        # This way, we can construct early_stop_detector from config and serialize its state for checkpoint.
+        # We can also stack multiple early stop conditions together.
+
+        # Auto-terminate if there are too many consecutive nan losses.
+        num_nans = train_state.num_nans
+        if jnp.isnan(loss):
+            if num_nans >= max_nan_loss:
+                logging.info(
+                    f"iteration {train_state.iteration}: loss = {loss} \
+                        for more than {max_nan_loss} iters, training stopped."
+                )
+                sys.exit(1)
+                # break
+            else:
+                train_state = train_state._replace(num_nans=num_nans+1)
+        elif num_nans > 0:
+            train_state = train_state._replace(num_nans=0)
+
+        # Additional early stopping policy
+        _tolerance = 0.5
+        if loss > running_loss + _tolerance:
+            if num_loss_blow_ups >= max_loss_blow_ups:
+                logging.info(
+                    f"iteration {train_state.iteration}: \
+                        loss = {loss} > running_loss = {running_loss} + eps = {_tolerance} \
+                        for more than {max_loss_blow_ups} iters, training stopped."
+                )
+                sys.exit(1)
+            else:
+                num_loss_blow_ups += 1
+        else:
+            num_loss_blow_ups = 0
+
+        # ======================================================================
+        # BELOW UPDATES ADDITIONAL LOG MESSAGES...
+        # Basic states.
+        metrics = {
+            "iterations": train_state.iteration,
+            "loss": loss,
+            "total_tokens": total_tokens,
+            "accuracy": accuracy,
+        }
+        metrics.update(log_metrics)
+
+        # Time complexity related statistics.
+        time_keeper.mark(
+            start_events=["dataloader", "iteration", "tokens", "samples"],
+            end_events={"iteration": 1, "tokens": tokens, "samples": samples},
+        )
+        durations = time_keeper.get_durations()
+        proportions = time_keeper.get_proportions()
+        metrics.update(
+            {
+                f"time/secs_per/{k}": durations[k]
+                for k in iteration_timing_events
+                if k in durations
+            }
+        )
+        metrics.update(
+            {
+                f"time/fraction_spent/{k}": proportions[k]
+                for k in iteration_timing_events
+                if k in proportions
+            }
+        )
+
+        if "iteration" in durations:
+            throughput = {
+                "throughput/iteration_per_sec": 1.0 / durations["iteration"],
+                "throughput/samples_per_sec": 1.0 / durations["samples"],
+                "throughput/tokens_per_sec": 1.0 / durations["tokens"],
+            }
+            metrics.update(throughput)
+
+        if config.logging.wandb_project is not None:
+            wandb_logger(
+                metrics,
+                step=train_state.iteration,
+            )
+
+        # ======================================================================
+        # [CHECKPOINT]: saves checkpoint.
+        # A checkpoint is saved either when `it % save_steps == 0` or when `it in save_steps`.
+        if config.checkpoint.save:
+            save_steps = config.checkpoint.save_steps
+            it = int(train_state.iteration)     # NOTE: this is 1-indexing by construction
+            if isinstance(save_steps, int):
+                to_save = it % save_steps == 0
+            elif isinstance(save_steps, ListConfig):
+                to_save = it in save_steps
+            else:
+                raise TypeError(f"checkpoint.save_steps has invalid type '{type(save_steps)}'.")
+            if to_save:
+                checkpoint_train_state = os.path.join(config.checkpoint.save_path, f"iter_{it}.ckpt")
+                serializer.save(checkpoint_train_state, train_state)
+                logging.info(f"Successfully saves checkpoint file to '{checkpoint_train_state}'.")
+
+                checkpoint_model = os.path.join(config.checkpoint.save_path, f"iter_{it}_model.ckpt")
+                serializer.save(checkpoint_model, train_state.model)
+                logging.info(f"Successfully saves checkpoint model to '{checkpoint_model}'.")
+
+    return train_state

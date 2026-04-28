@@ -1,8 +1,8 @@
 """Tests for LEARNING_RATE_REGISTRY and schedule builders in optax.py"""
 
 import pytest
-from optimizer.schedule.registry import LEARNING_RATE_REGISTRY
-from optimizer.schedule.base import optax as schedule_optax
+from _optimizer.schedule.registry import LEARNING_RATE_REGISTRY
+from _optimizer.schedule.base import optax as schedule_optax
 
 
 # Schedule names registered in optax.py (name -> config class for default instantiation)

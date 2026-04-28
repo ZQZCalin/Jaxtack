@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import Any, Callable
 from jax.typing import ArrayLike
-from optimizer.config import BaseOptimizerConfig
+from _optimizer.config import BaseOptimizerConfig
 
 import optax
-from optimizer.registry import OPTIMIZER_REGISTRY
+from _optimizer.registry import OPTIMIZER_REGISTRY
 
 # Type alias for mask parameters (tree or callable).
 MaskOrFn = Any | Callable[[optax.Params], Any] | None

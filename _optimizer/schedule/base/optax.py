@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from typing import Any
-from optimizer.schedule.registry import (
+from _optimizer.schedule.registry import (
     LEARNING_RATE_REGISTRY,
     BaseLearningRateConfig,
 )
